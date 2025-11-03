@@ -2,3 +2,14 @@ node_modules/
 .env
 dist/
 .DS_Store
+.md
+*.md.*
+node_modules/
+npm-debug.log
+.env
+.DS_Store
+*.log
+.vscode/
+.idea/
+logs/
+.pm2/
