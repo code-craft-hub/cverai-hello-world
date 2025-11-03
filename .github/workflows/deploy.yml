@@ -16,53 +16,60 @@ jobs:
   deploy:
     name: Deploy to GCP
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
+      
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
-
+      
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v1
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
-
+      
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v1
         with:
           project_id: ${{ env.PROJECT_ID }}
-
+      
       - name: Deploy to Compute Engine
         run: |
+          # Get the username first
+          REMOTE_USER=$(gcloud compute ssh ${{ env.GCE_INSTANCE }} \
+            --zone=${{ env.GCE_INSTANCE_ZONE }} \
+            --command="whoami" 2>/dev/null | tr -d '\r')
+          
+          echo "Remote user: $REMOTE_USER"
+          
           # Create application directory on the instance
           gcloud compute ssh ${{ env.GCE_INSTANCE }} \
             --zone=${{ env.GCE_INSTANCE_ZONE }} \
-            --command="mkdir -p /home/\$USER/cverai-app"
-
+            --command="mkdir -p ~/cverai-app"
+          
           # Copy application files to the instance
           gcloud compute scp --recurse \
             --zone=${{ env.GCE_INSTANCE_ZONE }} \
-            ./* ${{ env.GCE_INSTANCE }}:/home/\$USER/cverai-app/
-
+            ./* ${{ env.GCE_INSTANCE }}:~/cverai-app/
+          
           # Install dependencies and restart with PM2
           gcloud compute ssh ${{ env.GCE_INSTANCE }} \
             --zone=${{ env.GCE_INSTANCE_ZONE }} \
-            --command="cd /home/\$USER/cverai-app && npm install --production && pm2 restart ecosystem.config.js --update-env || pm2 start ecosystem.config.js"
-
+            --command="cd ~/cverai-app && npm install --production && (pm2 restart ecosystem.config.js --update-env || pm2 start ecosystem.config.js)"
+          
           # Save PM2 process list
           gcloud compute ssh ${{ env.GCE_INSTANCE }} \
             --zone=${{ env.GCE_INSTANCE_ZONE }} \
             --command="pm2 save"
-
+          
           # Show PM2 status
           gcloud compute ssh ${{ env.GCE_INSTANCE }} \
             --zone=${{ env.GCE_INSTANCE_ZONE }} \
             --command="pm2 list"
-
+      
       - name: Deployment Complete
         run: |
           EXTERNAL_IP=$(gcloud compute instances describe ${{ env.GCE_INSTANCE }} \
