@@ -18,3 +18,8 @@ gcloud compute instances create cverai-instance \
   gcloud compute firewall-rules list
 
 sudo apt update && sudo apt upgrade -y
+
+
+
+gcp-key.json
+

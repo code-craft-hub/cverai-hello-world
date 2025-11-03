@@ -1,0 +1,72 @@
+name: Deploy to GCP Compute Engine
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: pelagic-gist-459620-q8
+  GCE_INSTANCE: cverai-instance
+  GCE_INSTANCE_ZONE: us-central1-a
+  APP_NAME: cverai-hello-world
+
+jobs:
+  deploy:
+    name: Deploy to GCP
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v1
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v1
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Deploy to Compute Engine
+        run: |
+          # Create application directory on the instance
+          gcloud compute ssh ${{ env.GCE_INSTANCE }} \
+            --zone=${{ env.GCE_INSTANCE_ZONE }} \
+            --command="mkdir -p /home/\$USER/cverai-app"
+
+          # Copy application files to the instance
+          gcloud compute scp --recurse \
+            --zone=${{ env.GCE_INSTANCE_ZONE }} \
+            ./* ${{ env.GCE_INSTANCE }}:/home/\$USER/cverai-app/
+
+          # Install dependencies and restart with PM2
+          gcloud compute ssh ${{ env.GCE_INSTANCE }} \
+            --zone=${{ env.GCE_INSTANCE_ZONE }} \
+            --command="cd /home/\$USER/cverai-app && npm install --production && pm2 restart ecosystem.config.js --update-env || pm2 start ecosystem.config.js"
+
+          # Save PM2 process list
+          gcloud compute ssh ${{ env.GCE_INSTANCE }} \
+            --zone=${{ env.GCE_INSTANCE_ZONE }} \
+            --command="pm2 save"
+
+          # Show PM2 status
+          gcloud compute ssh ${{ env.GCE_INSTANCE }} \
+            --zone=${{ env.GCE_INSTANCE_ZONE }} \
+            --command="pm2 list"
+
+      - name: Deployment Complete
+        run: |
+          EXTERNAL_IP=$(gcloud compute instances describe ${{ env.GCE_INSTANCE }} \
+            --zone=${{ env.GCE_INSTANCE_ZONE }} \
+            --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+          echo "Application deployed successfully!"
+          echo "Access your application at: http://$EXTERNAL_IP:3000"
